@@ -1,5 +1,6 @@
 package com.flatrock.orderservice.service;
 
+import com.flatrock.orderservice.dto.InventoryResponse;
 import com.flatrock.orderservice.dto.OrderLineItemsDto;
 import com.flatrock.orderservice.dto.OrderRequest;
 import com.flatrock.orderservice.model.Order;
@@ -11,7 +12,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.reactive.function.client.WebClient;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,6 +24,7 @@ import java.util.UUID;
 public class OrderService {
 
     private final OrderRepository orderRepository;
+    private final WebClient webClient;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -34,7 +38,25 @@ public class OrderService {
                 .toList();
 
         order.setOrderLineItemsList(orderLineItems);
-        orderRepository.save(order);
+
+        List<String> skuCodes = order.getOrderLineItemsList().stream()
+                .map(OrderLineItems::getSkuCode)
+                .toList();
+
+
+        InventoryResponse[] inventoryResponses = webClient.get()
+                .uri("http://localhost:8082/api/inventory",
+                        uriBuilder -> uriBuilder.queryParam("skuCodes", skuCodes).build())
+                .retrieve()
+                .bodyToMono(InventoryResponse[].class).block();
+
+        boolean areAllItemsAvailable = Arrays.stream(inventoryResponses).allMatch(InventoryResponse::isInStock);
+
+        if(areAllItemsAvailable){
+            orderRepository.save(order);
+        }else{
+            throw new IllegalArgumentException("Product is not available now, please try again");
+        }
     }
 
     private OrderLineItems mapToDto(OrderLineItemsDto orderLineItemsDto) {
