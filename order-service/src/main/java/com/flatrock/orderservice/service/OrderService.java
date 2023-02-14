@@ -3,11 +3,13 @@ package com.flatrock.orderservice.service;
 import com.flatrock.orderservice.dto.InventoryResponse;
 import com.flatrock.orderservice.dto.OrderLineItemsDto;
 import com.flatrock.orderservice.dto.OrderRequest;
+import com.flatrock.orderservice.event.OrderPlacedEvent;
 import com.flatrock.orderservice.model.Order;
 import com.flatrock.orderservice.model.OrderLineItems;
 import com.flatrock.orderservice.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,6 +27,8 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final WebClient.Builder webClientBuilder;
+
+    private final KafkaTemplate<String, OrderPlacedEvent> kafkaTemplate;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -54,6 +58,7 @@ public class OrderService {
 
         if(areAllItemsAvailable){
             orderRepository.save(order);
+            kafkaTemplate.send("notificationTopic", new OrderPlacedEvent(order.getOrderNumber()));
         }else{
             throw new IllegalArgumentException("Product is not available now, please try again");
         }
